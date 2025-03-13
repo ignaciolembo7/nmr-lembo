@@ -1,4 +1,4 @@
-#NMRSI - Ignacio Lembo Ferrari - 08/09/2024
+#NMRSI - Ignacio Lembo Ferrari - 02/09/2024
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -6,6 +6,8 @@ from matplotlib.colors import LogNorm
 import glob 
 from brukerapi.dataset import Dataset as ds
 import seaborn as sns
+import lmfit
+
 sns.set_theme(context='paper')
 sns.set_style("whitegrid")
 
@@ -155,7 +157,7 @@ def nogse_params(method_path):
 
         return {"t_nogse": t_nogse, "ramp_grad_str": ramp_grad_str, "ramp_grad_N": ramp_grad_N, "ramp_grad_x": ramp_grad_x, "EchoTime": EchoTime}
 
-def upload_contrast_data(data_directory, slic):
+def upload_contrast_vs_g_data(data_directory, slic):
 
     def generar_rangos_discontinuos(rangos_str):
         carpetas = []
@@ -199,128 +201,27 @@ def upload_contrast_data(data_directory, slic):
         print("No se encontraron errores en el procesamiento de las carpetas.")
         return image_paths, method_paths
 
-def upload_contrast_data_v2(data_directory, slic): 
-
-    def generar_rangos_discontinuos(rangos_str):
-        carpetas = []
-        for rango in rangos_str.split(','):
-            desde, hasta = map(int, rango.split('-'))
-            carpetas.extend([str(numero) for numero in range(desde, hasta + 1)])
-        return carpetas
-
-    folder_ranges = input('Ingrese un conjunto de rangos de carpetas, por ejemplo, 106-108,110-115, ... : ')
-    carpetas = generar_rangos_discontinuos(folder_ranges)
-
-    carpeta_info = []
-
-    error_carpeta = None  # Variable para almacenar el número de carpeta donde ocurre el error
-
-    for carpeta in carpetas:
-        try:
-            method_path = glob.glob(f"{data_directory}/{carpeta}/method")[0]
-            param_dict = nogse_params(method_path)
-            x_value = param_dict['ramp_grad_x']  # Ajusta esto según la clave correcta en tu diccionario
-            g_value = param_dict['ramp_grad_str']  # Ajusta esto según la clave correcta en tu diccionario
-            carpeta_info.append((carpeta, x_value, g_value))
-        except Exception as e:
-            error_carpeta = carpeta
-            print(f"Error al procesar la carpeta {carpeta}: {e}")
-            break  # Salir del bucle cuando se encuentre el error
-
-    # Si se produjo un error, imprime el número de carpeta
-    if error_carpeta is not None:
-        print(f"El error ocurrió en la carpeta {error_carpeta}.")
-        return None, None
-
-    # Ordenar las carpetas primero por x y luego por g
-    carpeta_info.sort(key=lambda x: (x[1], x[2]))
-
-    image_paths = []
-    method_paths = []
-
-    for carpeta, x_value, g_value in carpeta_info:
-        try:
-            image_path = glob.glob(f"{data_directory}/{carpeta}/pdata/1/2dseq")[0]
-            method_path = glob.glob(f"{data_directory}/{carpeta}/method")[0]
-            image_paths.append(image_path)
-            method_paths.append(method_path)
-        except Exception as e:
-            print(f"Error al procesar la carpeta {carpeta} después de ordenar: {e}")
-            break  # Salir del bucle cuando se encuentre el error
-
-    if len(image_paths) == 0 or len(method_paths) == 0:
-        print("No se encontraron imágenes o métodos válidos después de ordenar.")
-        return None, None
-    else:
-        print("No se encontraron errores en el procesamiento de las carpetas después de ordenar.")
-        return image_paths, method_paths
-
-def upload_contrast_data_A0_v2(data_directory, slic): 
-
-    def generar_rangos_discontinuos(rangos_str):
-        carpetas = []
-        for rango in rangos_str.split(','):
-            desde, hasta = map(int, rango.split('-'))
-            carpetas.extend([str(numero) for numero in range(desde, hasta + 1)])
-        return carpetas
-
-    folder_ranges = input('Ingrese un conjunto de 2 carpetas para A0, por ejemplo, 79-80 ... : ')
-    carpetas = generar_rangos_discontinuos(folder_ranges)
-
-    carpeta_info = []
-
-    error_carpeta = None  # Variable para almacenar el número de carpeta donde ocurre el error
-
-    for carpeta in carpetas:
-        try:
-            method_path = glob.glob(f"{data_directory}/{carpeta}/method")[0]
-            param_dict = nogse_params(method_path)
-            x_value = param_dict['ramp_grad_x']  # Ajusta esto según la clave correcta en tu diccionario
-            g_value = param_dict['ramp_grad_str']  # Ajusta esto según la clave correcta en tu diccionario
-            carpeta_info.append((carpeta, x_value, g_value))
-        except Exception as e:
-            error_carpeta = carpeta
-            print(f"Error al procesar la carpeta {carpeta}: {e}")
-            break  # Salir del bucle cuando se encuentre el error
-
-    # Si se produjo un error, imprime el número de carpeta
-    if error_carpeta is not None:
-        print(f"El error ocurrió en la carpeta {error_carpeta}.")
-        return None, None
-
-    # Ordenar las carpetas primero por x y luego por g
-    carpeta_info.sort(key=lambda x: (x[1], x[2]))
-
-    image_paths = []
-    method_paths = []
-
-    for carpeta, x_value, g_value in carpeta_info:
-        try:
-            image_path = glob.glob(f"{data_directory}/{carpeta}/pdata/1/2dseq")[0]
-            method_path = glob.glob(f"{data_directory}/{carpeta}/method")[0]
-            image_paths.append(image_path)
-            method_paths.append(method_path)
-        except Exception as e:
-            print(f"Error al procesar la carpeta {carpeta} después de ordenar: {e}")
-            break  # Salir del bucle cuando se encuentre el error
-
-    if len(image_paths) == 0 or len(method_paths) == 0:
-        print("No se encontraron imágenes o métodos válidos después de ordenar.")
-        return None, None
-    else:
-        print("No se encontraron errores en el procesamiento de las carpetas después de ordenar.")
-        return image_paths, method_paths
 
 def generate_contrast_vs_g_roi(image_paths, method_paths, mask, slic):
     
     experiments = []
+    A0s = []
     params = []
+    f = []
+    error = []
     f_hahn = []
-    f_cpmg = [] 
-
+    f_cpmg = []
+    error_hahn = []
+    error_cpmg = []
+    f_A0_hahn = []
+    f_A0_cpmg = []
+    error_A0_hahn = []
+    error_A0_cpmg = []
+    
     for image_path, method_path in zip(image_paths, method_paths):
         ims = ds(image_path).data
-        experiments.append(ims[:,:,slic,0])
+        A0s.append(ims[:,:,slic,0]) 
+        experiments.append(ims[:,:,slic,1])
         param_dict = nogse_params(method_path)
         param_list = list(param_dict.values())
         params.append(param_list)
@@ -328,11 +229,14 @@ def generate_contrast_vs_g_roi(image_paths, method_paths, mask, slic):
     T_nogse, g, n, x, TE = np.array(params).T 
 
     E_matrix = np.array(experiments)
+    A0_matrix = np.array(A0s)
 
     N = len(E_matrix) 
     middle_idx = int(N/2) 
     E_cpmg = E_matrix[middle_idx:] 
     E_hahn = E_matrix[:middle_idx] 
+    A0_cpmg = A0_matrix[middle_idx:]
+    A0_hahn = A0_matrix[:middle_idx]
     g_contrast = g[:middle_idx] 
     g_contrast_check = g[middle_idx:] 
 
@@ -340,30 +244,50 @@ def generate_contrast_vs_g_roi(image_paths, method_paths, mask, slic):
         roi_cpmg = np.zeros_like(E_cpmg[i])
         roi_cpmg[mask == 255] = E_cpmg[i][mask == 255]
         f_cpmg.append(np.mean(roi_cpmg[roi_cpmg != 0]))
+        error_cpmg.append(np.std(roi_cpmg[roi_cpmg != 0]))
 
         roi_hahn = np.zeros_like(E_hahn[i])
         roi_hahn[mask == 255] = E_hahn[i][mask == 255]
         f_hahn.append(np.mean(roi_hahn[roi_hahn != 0]))
+        error_hahn.append(np.std(roi_hahn[roi_hahn != 0]))
 
-    print(f"NOGSE parameters for the {len(experiments)} experiments:\n")
-    print("T_nogse:\n",T_nogse)
-    print("g:\n",g_contrast)
-    print("x:\n",x)
-    print("N:\n",n)
-    print("TE:\n",TE)
+        roi_A0cpmg = np.zeros_like(A0_cpmg[i])
+        roi_A0cpmg[mask == 255] = A0_cpmg[i][mask == 255]
+        f_A0_cpmg.append(np.mean(roi_A0cpmg[roi_A0cpmg != 0]))
+        error_A0_cpmg.append(np.std(roi_A0cpmg[roi_A0cpmg != 0]))
 
-    return T_nogse[0], g_contrast, int(n[0]), f_hahn, f_cpmg
+        roi_A0hahn = np.zeros_like(A0_hahn[i])
+        roi_A0hahn[mask == 255] = A0_hahn[i][mask == 255]
+        f_A0_hahn.append(np.mean(roi_A0hahn[roi_A0hahn != 0]))
+        error_A0_hahn.append(np.std(roi_A0hahn[roi_A0hahn != 0]))
 
-def generate_contrast_vs_g_roi_riciannoise(image_paths, method_paths, mask, slic, f_hahn_noise, f_cpmg_noise):
+    # vectores_combinados = zip(g_contrast, f)
+    # vectores_ordenados = sorted(vectores_combinados, key=lambda x: x[0])
+    # g_contrast, f = zip(*vectores_ordenados)
+
+    # print(f"NOGSE parameters for the {len(experiments)} experiments:\n")
+    # print("T_nogse:\n",T_nogse)
+    # print("g:\n",g_contrast)
+    # print("x:\n",x)
+    # print("N:\n",n)
+    # print("TE:\n",TE)
+
+    return T_nogse[0], g_contrast, int(n[0]), f_hahn, error_hahn, f_cpmg, error_cpmg, f_A0_hahn, error_A0_hahn, f_A0_cpmg, error_A0_cpmg
+
+def generate_contrast_vs_g_roi_riciannoise(image_paths, method_paths, mask, slic, f_cpmg_noise, f_hahn_noise,  f_A0_cpmg_noise, f_A0_hahn_noise):
     
     experiments = []
+    A0s = []
     params = []
     f_hahn = []
-    f_cpmg = [] 
+    f_cpmg = []
+    f_A0_hahn = []
+    f_A0_cpmg = []
 
     for image_path, method_path in zip(image_paths, method_paths):
         ims = ds(image_path).data
-        experiments.append(ims[:,:,slic,0])
+        A0s.append(ims[:,:,slic,0]) 
+        experiments.append(ims[:,:,slic,1])
         param_dict = nogse_params(method_path)
         param_list = list(param_dict.values())
         params.append(param_list)
@@ -371,11 +295,14 @@ def generate_contrast_vs_g_roi_riciannoise(image_paths, method_paths, mask, slic
     T_nogse, g, n, x, TE = np.array(params).T 
 
     E_matrix = np.array(experiments)
+    A0_matrix = np.array(A0s)
 
     N = len(E_matrix) 
     middle_idx = int(N/2) 
     E_cpmg = E_matrix[middle_idx:] 
     E_hahn = E_matrix[:middle_idx] 
+    A0_cpmg = A0_matrix[middle_idx:]
+    A0_hahn = A0_matrix[:middle_idx]
     g_contrast = g[:middle_idx] 
     g_contrast_check = g[middle_idx:] 
 
@@ -390,101 +317,72 @@ def generate_contrast_vs_g_roi_riciannoise(image_paths, method_paths, mask, slic
         E_hahn_corrected = np.sqrt( np.abs ( np.mean( (roi_hahn[roi_hahn != 0])**2 ) - (f_hahn_noise[i])**2 ) )
         f_hahn.append(E_hahn_corrected)
 
-    print(f"NOGSE parameters for the {len(experiments)} experiments:\n")
-    print("T_nogse:\n",T_nogse)
-    print("g:\n",g_contrast)
-    print("x:\n",x)
-    print("N:\n",n)
-    print("TE:\n",TE)
+        roi_A0_cpmg = np.zeros_like(A0_cpmg[i])
+        roi_A0_cpmg[mask == 255] = A0_cpmg[i][mask == 255]
+        E_A0_cpmg_corrected = np.sqrt( np.abs ( np.mean( (roi_A0_cpmg[roi_A0_cpmg != 0])**2 ) - (f_A0_cpmg_noise[i])**2 ) )
+        f_A0_cpmg.append(E_A0_cpmg_corrected)
+       
+        roi_A0_hahn = np.zeros_like(A0_hahn[i])
+        roi_A0_hahn[mask == 255] = A0_hahn[i][mask == 255]
+        E_A0_hahn_corrected = np.sqrt( np.abs ( np.mean( (roi_A0_hahn[roi_A0_hahn != 0])**2 ) - (f_A0_hahn_noise[i])**2 ) )
+        f_A0_hahn.append(E_A0_hahn_corrected)
 
-    return T_nogse[0], g_contrast, int(n[0]), f_hahn, f_cpmg
+    return T_nogse, g_contrast, n, f_hahn, f_cpmg, f_A0_hahn, f_A0_cpmg, x, TE
 
-def generate_contrast_vs_g_roi_A0_riciannoise(image_paths, method_paths, mask, slic, f_A0_hahn_noise, f_A0_cpmg_noise):
+def generate_contrast_vs_g_roi_A0unico(image_paths, method_paths, mask, slic):
     
-    A0s = []
+    experiments = []
     params = []
-    f_A0_hahn = []
-    f_A0_cpmg = [] 
-
+    f_hahn = []
+    f_cpmg = [] 
+    f_matrix = []
+    error_matrix = []
+    f = []
+    error = []
+    
     for image_path, method_path in zip(image_paths, method_paths):
         ims = ds(image_path).data
-        A0s.append(ims[:,:,slic,0])
+        experiments.append(ims[:,:,slic,0])
         param_dict = nogse_params(method_path)
         param_list = list(param_dict.values())
         params.append(param_list)
                 
     T_nogse, g, n, x, TE = np.array(params).T 
 
-    A0_matrix = np.array(A0s)
+    M_matrix = np.array(experiments)
 
-    N = len(A0_matrix) 
+    for i in range(len(M_matrix)):
+        roi = np.zeros_like(M_matrix[i])
+        roi[mask == 255] = M_matrix[i][mask == 255]
+        f_matrix.append(np.mean(roi[roi != 0]))
+        error_matrix.append(np.std(roi[roi != 0]))
+
+    N = len(f_matrix) 
     middle_idx = int(N/2) 
-    A0_cpmg = A0_matrix[middle_idx:]
-    A0_hahn = A0_matrix[:middle_idx]
+    f_cpmg = f_matrix[middle_idx:] 
+    f_hahn = f_matrix[:middle_idx] 
+    error_cpmg = error_matrix[middle_idx:]
+    error_hahn = error_matrix[:middle_idx]
     g_contrast = g[:middle_idx] 
     g_contrast_check = g[middle_idx:] 
+    f = np.array(f_cpmg) - np.array(f_hahn)
+    error = np.sqrt(np.array(error_cpmg)**2 + np.array(error_hahn)**2)
 
-    for i in range(len(A0_cpmg)):
-        roi_A0_cpmg = np.zeros_like(A0_cpmg[i])
-        roi_A0_cpmg[mask == 255] = A0_cpmg[i][mask == 255]
-        E_A0_cpmg_corrected = np.sqrt( np.abs ( np.mean( (roi_A0_cpmg[roi_A0_cpmg != 0])**2 ) - (f_A0_cpmg_noise[i])**2 ) )
-        f_A0_cpmg.append(E_A0_cpmg_corrected)
-        
-        roi_A0_hahn = np.zeros_like(A0_hahn[i])
-        roi_A0_hahn[mask == 255] = A0_hahn[i][mask == 255]
-        E_A0_hahn_corrected = np.sqrt( np.abs ( np.mean( (roi_A0_hahn[roi_A0_hahn != 0])**2 ) - (f_A0_hahn_noise[i])**2 ) )
-        f_A0_hahn.append(E_A0_hahn_corrected)
+    #vectores_combinados = zip(g_contrast, f)
+    #vectores_ordenados = sorted(vectores_combinados, key=lambda x: x[0])
+    #g_contrast, f = zip(*vectores_ordenados)
 
-    print(f"NOGSE parameters for the {len(A0s)} experiments:\n")
+    print(f"NOGSE parameters for the {len(experiments)} experiments:\n")
     print("T_nogse:\n",T_nogse)
-    print("g:\n",g_contrast)
+    print("g_contrast",g_contrast)
+    print("g_contrast_check",g_contrast_check)
+    print("f:\n",f)
     print("x:\n",x)
     print("N:\n",n)
     print("TE:\n",TE)
 
-    return T_nogse[0], g_contrast, int(n[0]), f_A0_hahn, f_A0_cpmg
+    return T_nogse[0], g_contrast, int(n[0]), f, error, f_hahn, error_hahn, f_cpmg, error_cpmg
 
-def upload_A0_vs_x_data(data_directory, slic):
-
-    def generar_rangos_discontinuos(rangos_str):
-        carpetas = []
-        for rango in rangos_str.split(','):
-            desde, hasta = map(int, rango.split('-'))
-            carpetas.extend([str(numero) for numero in range(desde, hasta + 1)])
-        return carpetas
-
-    folder_ranges = input('Ingrese un conjunto de rangos de carpetas A0, por ejemplo, 106-107 ... : ')
-    carpetas = generar_rangos_discontinuos(folder_ranges)
-
-    image_paths = []
-    method_paths = []
-    experiments = []
-    A0s = []
-
-    error_carpeta = None  # Variable para almacenar el número de carpeta donde ocurre el error
-    
-    for carpeta in carpetas:
-        try:
-            image_path = glob.glob(f"{data_directory}/{carpeta}/pdata/1/2dseq")[0]
-            method_path = glob.glob(f"{data_directory}/{carpeta}/method")[0]
-            image_paths.append(image_path)
-            method_paths.append(method_path)
-            ims = ds(image_path).data
-            A0s.append(ims[:,:,slic,0]) 
-            M_matrix = np.array(experiments)
-            A0_matrix = np.array(A0s)
-        except Exception as e:
-            error_carpeta = carpeta
-            print(f"Error al procesar la carpeta {carpeta}: {e}")
-            break  # Salir del bucle cuando se encuentre el error
-
-    # Si se produjo un error, imprime el número de carpeta
-    if error_carpeta is not None:
-        print(f"El error ocurrió en la carpeta {error_carpeta}.")
-    else:
-        print("No se encontraron errores en el procesamiento de las carpetas.")
-        return image_paths, method_paths
-    
 def upload_NOGSE_vs_x_data(data_directory, slic):
 
     def generar_rangos_discontinuos(rangos_str):
@@ -511,7 +409,7 @@ def upload_NOGSE_vs_x_data(data_directory, slic):
             image_paths.append(image_path)
             method_paths.append(method_path)
             ims = ds(image_path).data
-            # A0s.append(ims[:,:,slic,0]) 
+            A0s.append(ims[:,:,slic,0]) 
             experiments.append(ims[:,:,slic,0])
             M_matrix = np.array(experiments)
             A0_matrix = np.array(A0s)
@@ -530,13 +428,15 @@ def upload_NOGSE_vs_x_data(data_directory, slic):
 def generate_NOGSE_vs_x_roi(image_paths, method_paths, mask, slic):
     
     experiments = []
+    A0s = []
     params = []
     f = []
     error = []
     
     for image_path, method_path in zip(image_paths, method_paths):
         ims = ds(image_path).data
-        experiments.append(ims[:,:,slic,0])
+        A0s.append(ims[:,:,slic,0]) 
+        experiments.append(ims[:,:,slic,1])
         param_dict = nogse_params(method_path)
         param_list = list(param_dict.values())
         params.append(param_list)
@@ -550,7 +450,7 @@ def generate_NOGSE_vs_x_roi(image_paths, method_paths, mask, slic):
     print("TE:\n",TE)
 
     M_matrix = np.array(experiments)
-    E_matrix = M_matrix 
+    E_matrix = M_matrix
 
     for i in range(len(E_matrix)):
         roi = np.zeros_like(E_matrix[i])
@@ -593,20 +493,137 @@ def generate_A0_vs_x_roi(image_paths, method_paths, mask, slic):
 
     return T_nogse[0], g[0], x, int(n[0]), f, error
 
+def generate_NOGSE_vs_x_roi_riciannoise(image_paths, method_paths, mask, slic, f_noise):
+    
+    experiments = []
+    params = []
+    f = []
+    
+    for image_path, method_path in zip(image_paths, method_paths):
+        ims = ds(image_path).data
+        experiments.append(ims[:,:,slic,1])
+        param_dict = nogse_params(method_path)
+        param_list = list(param_dict.values())
+        params.append(param_list)
+                
+    T_nogse, g, n, x, TE = np.array(params).T 
+    print(f"NOGSE parameters for the {len(experiments)} experiments:\n")
+    print("T_nogse:\n",T_nogse)
+    print("g:\n",g)
+    print("x:\n",x)
+    print("N:\n",n)
+    print("TE:\n",TE)
+
+    M_matrix = np.array(experiments)
+    E_matrix = M_matrix
+
+    for i in range(len(E_matrix)):
+        roi = np.zeros_like(E_matrix[i])
+        roi[mask == 255] = E_matrix[i][mask == 255]
+        E_corrected = np.sqrt( np.abs ( np.mean( (roi[roi != 0])**2 ) - (f_noise[i])**2 ) )
+        f.append(E_corrected)
+
+    return T_nogse[0], g[0], x, int(n[0]), f
+
+def generate_A0_vs_x_roi_riciannoise(image_paths, method_paths, mask, slic, f_noise):
+    
+    A0s = []
+    params = []
+    f = []
+    
+    for image_path, method_path in zip(image_paths, method_paths):
+        ims = ds(image_path).data
+        A0s.append(ims[:,:,slic,0]) 
+        param_dict = nogse_params(method_path)
+        param_list = list(param_dict.values())
+        params.append(param_list)
+                
+    T_nogse, g, n, x, TE = np.array(params).T 
+    print(f"NOGSE parameters for the {len(A0s)} experiments:\n")
+    print("T_nogse:\n",T_nogse)
+    print("g:\n",g)
+    print("x:\n",x)
+    print("N:\n",n)
+    print("TE:\n",TE)
+
+    A0_matrix = np.array(A0s)
+    E_matrix = A0_matrix
+
+    for i in range(len(E_matrix)):
+        roi = np.zeros_like(E_matrix[i])
+        roi[mask == 255] = E_matrix[i][mask == 255]
+        E_corrected = np.sqrt( np.abs ( np.mean( (roi[roi != 0])**2 ) - (f_noise[i])**2 ) )
+        f.append(E_corrected)
+
+    return T_nogse[0], g[0], x, int(n[0]), f
+
+def generate_NOGSE_vs_x_hist(image_paths, method_paths, mask, slic):
+
+    experiments = []
+    A0s = []
+    params = []
+    f = []
+    error = []
+    pixel_values_in_roi = []  # Lista para almacenar valores de píxeles en la ROI
+    
+    for image_path, method_path in zip(image_paths, method_paths):
+        ims = ds(image_path).data
+        A0s.append(ims[:, :, slic, 0]) 
+        experiments.append(ims[:, :, slic, 1])
+        param_dict = nogse_params(method_path)
+        param_list = list(param_dict.values())
+        params.append(param_list)
+                
+    T_nogse, g, n, x, TE = np.array(params).T 
+    print(f"NOGSE parameters for the {len(experiments)} experiments:\n")
+    print("T_nogse:\n", T_nogse)
+    print("g:\n", g)
+    print("x:\n", x)
+    print("N:\n", n)
+    print("TE:\n", TE)
+
+    M_matrix = np.array(experiments)
+    A0_matrix = np.array(A0s)
+    E_matrix = M_matrix # / A0_matrix
+
+    for i in range(len(E_matrix)):
+        roi = np.zeros_like(E_matrix[i])
+        roi[mask == 255] = E_matrix[i][mask == 255]
+        f.append(np.mean(roi[roi != 0]))
+        error.append(np.std(roi[roi != 0]))
+        
+        # Guardar valores de píxeles en la ROI para el histograma
+        pixel_values_in_roi.extend(roi[roi != 0])
+    
+    return T_nogse[0], g[0], x, int(n[0]), pixel_values_in_roi
+
 #############################################################################
 #GRAFICA DE DATOS
 #############################################################################
 
-def plot_nogse_vs_x_data(ax, nroi, x, f, error, tnogse, g, n, slic):
-    ax.plot(x, f, "-o", markersize=7, linewidth = 2, label=nroi)
-    #ax.errorbar(x, f, yerr=error, fmt='o-', markersize=3, linewidth=2, capsize=5, label=nroi)
+def plot_nogse_vs_x_data(ax, nroi, x, f, error, tnogse, g, n, slic, color):
+    #ax.plot(x, f, "-o", markersize=7, linewidth = 2, color=color, label=nroi)
+    ax.errorbar(x, f, yerr=error, fmt='o-', markersize=3, linewidth=2, capsize=5, label=nroi)
     ax.set_xlabel("Tiempo de modulación $x$ [ms]", fontsize=27)
     ax.set_ylabel("Señal $\mathrm{NOGSE}$", fontsize=27)
-    ax.legend(title_fontsize=15, fontsize=15, loc='lower right')
+    ax.legend(title_fontsize=15, fontsize=15, loc='best')
     ax.tick_params(direction='in', top=True, right=True, left=True, bottom=True)
     ax.tick_params(axis='x',rotation=0, labelsize=16, color='black')
     ax.tick_params(axis='y', labelsize=16, color='black')
-    title = ax.set_title(f"{nroi} | $T_\mathrm{{NOGSE}}$ = {tnogse} ms | $G$ = {g} mT/m | $N$ = {n} | Slice = {slic}", fontsize=15)
+    title = ax.set_title(f"$T_\mathrm{{NOGSE}}$ = {tnogse} ms | $G$ = {g} mT/m | $N$ = {n} | Slice = {slic}", fontsize=15)
+    #plt.tight_layout()
+    #ax.set_xlim(0.5, 10.75)
+
+def plot_A0_vs_x_data(ax, nroi, x, f, error, tnogse, g, n, slic, color):
+    #ax.plot(x, f, "--", linewidth = 2, color=color, label=f"A0 - {nroi} - ({np.round(np.mean(f),2)} $\pm$ {np.round(np.std(f),2)})")
+    ax.errorbar(x, f, yerr=error, fmt='o-', markersize=3, linewidth=2, capsize=5,  label=f"A0 - {nroi} - ({np.round(np.mean(f),2)} $\pm$ {np.round(np.std(f),2)})")
+    ax.set_xlabel("Tiempo de modulación $x$ [ms]", fontsize=27)
+    ax.set_ylabel("Señal $\mathrm{NOGSE}$", fontsize=27)
+    ax.legend(title_fontsize=15, fontsize=15, loc='best')
+    ax.tick_params(direction='in', top=True, right=True, left=True, bottom=True)
+    ax.tick_params(axis='x',rotation=0, labelsize=16, color='black')
+    ax.tick_params(axis='y', labelsize=16, color='black')
+    title = ax.set_title(f"$T_\mathrm{{NOGSE}}$ = {tnogse} ms | $G$ = {g} mT/m | $N$ = {n} | Slice = {slic}", fontsize=15)
     #plt.tight_layout()
     #ax.set_xlim(0.5, 10.75)
 
@@ -621,17 +638,26 @@ def plot_nogse_vs_x_data_generated(ax, modelo, label, label_title, x, f, tnogse,
     title = ax.set_title(f"{modelo} | $T_\mathrm{{NOGSE}}$ = {tnogse} ms | $G$ = {g} mT/m | $N$ = {n}", fontsize=15)
     #ax.set_xlim(0.5, 10.75)
 
-def plot_nogse_vs_x_data_ptG(ax, nroi, x, f, error, tnogse, g, n, slic, color):
-    ax.errorbar(x, f, yerr=error, fmt='o-', markersize=3, linewidth=2, capsize=5, label=f"{tnogse} - {g} ")
-    #ax.plot(x, f, "-o", markersize=7, linewidth = 2, color = color, label=g)
+def plot_nogse_vs_x_data_ptG(ax, nroi, x, f, tnogse, g, n, num_grad, slic, color):
+    ax.plot(x, f, "-o", markersize=7, linewidth = 2, color = color, label=f"{num_grad} = {g}")
     ax.set_xlabel("Tiempo de modulación $x$ [ms]", fontsize=27)
     ax.set_ylabel("Señal $\mathrm{NOGSE}$", fontsize=27) 
-    ax.legend(title=' $T_\mathrm{{NOGSE}}$ - G [mT/m]', title_fontsize=10, fontsize=10, loc='best')
+    ax.legend(title='Gradiente [mT/m]', title_fontsize=15, fontsize=15, loc='upper right')
     ax.tick_params(direction='in', top=True, right=True, left=True, bottom=True)
     ax.tick_params(axis='x',rotation=0, labelsize=16, color='black')
     ax.tick_params(axis='y', labelsize=16, color='black')
-    title = ax.set_title(f"{nroi} | $N$ = {n} | Slice = {slic}", fontsize=15) #| $T_\mathrm{{NOGSE}}$ = {tnogse} ms |
-    #ax.set_yscale('log')
+    title = ax.set_title(f"{nroi} | $T_\mathrm{{NOGSE}}$ = {tnogse} ms | $N$ = {n} | Slice = {slic}", fontsize=15)
+    #ax.set_xlim(0.5, 10.75)
+
+def plot_nogse_vs_x_data_pttc(ax, nroi, x, f, tnogse, g, n, tc, slic, color):
+    ax.plot(x, f, "-o", markersize=7, linewidth = 2, color = color, label=f"$t_c$ = {tc}")
+    ax.set_xlabel("Tiempo de modulación $x$ [ms]", fontsize=27)
+    ax.set_ylabel("Señal $\mathrm{NOGSE}$", fontsize=27) 
+    ax.legend(title_fontsize=15, fontsize=15, loc='best')
+    ax.tick_params(direction='in', top=True, right=True, left=True, bottom=True)
+    ax.tick_params(axis='x',rotation=0, labelsize=16, color='black')
+    ax.tick_params(axis='y', labelsize=16, color='black')
+    title = ax.set_title(f"{nroi} | $T_\mathrm{{NOGSE}}$ = {tnogse} ms | $N$ = {n} | Slice = {slic}", fontsize=15)
     #ax.set_xlim(0.5, 10.75)
 
 def plot_nogse_vs_x_data_ptN(ax, nroi, x, f, tnogse, g, n, slic, color):
@@ -656,18 +682,16 @@ def plot_nogse_vs_x_data_ptTNOGSE(ax, nroi, x, f, tnogse, n, slic, color):
     title = ax.set_title(f"{nroi} | $N$ = {n} | Slice = {slic}", fontsize=15)
     #ax.set_xlim(0.5, 10.75)
 
-def plot_nogse_vs_x_fit(ax, nroi, modelo, x, x_fit, f, fit, tnogse, g, n, slic, color):
+def plot_nogse_vs_x_fit(ax, nroi, modelo, x, x_fit, f, fit, tnogse, g, n, num_grad, slic, label, color):
     ax.plot(x, f, "o", markersize=7, linewidth=2, color = color)
-    ax.plot(x_fit, fit, linewidth=2, label= nroi, color = color)
-    ax.legend(title_fontsize=20, fontsize=20, loc='center right')
+    ax.plot(x_fit, fit, linewidth=2, label = label, color = color)
+    ax.legend(title_fontsize=15, fontsize=15, loc='best')
     ax.set_xlabel("Tiempo de modulación x [ms]", fontsize=27)
-    ax.set_ylabel("Señal $\mathrm{NOGSE}$ normalizada", fontsize=27)
+    ax.set_ylabel("Señal $\mathrm{NOGSE}$", fontsize=27)
     ax.tick_params(direction='in', top=True, right=True, left=True, bottom=True)
     ax.tick_params(axis='x',rotation=0, labelsize=16, color='black')
     ax.tick_params(axis='y', labelsize=16, color='black')
-    #title = ax.set_title(f"{modelo} | $T_\mathrm{{NOGSE}}$ = {tnogse} ms | $G$ = {g} mT/m | $N$ = {n} | slice = {slic} ", fontsize=15)
-    title = ax.set_title(f"$T_\mathrm{{NOGSE}}$ = {tnogse} ms", fontsize=22)
-
+    title = ax.set_title(f"{modelo} | $T_\mathrm{{NOGSE}}$ = {tnogse} ms | {num_grad} = {g} mT/m | $N$ = {n} | slice = {slic} ", fontsize=15)
 
 def plot_nogse_vs_x_restdist_ptTNOGSE(ax, nroi, modelo, x, x_fit, f, fit, tnogse, g, n, slic, color, label):
     ax.plot(x, f, "o", markersize=7, linewidth = 2, color = color)
@@ -689,11 +713,12 @@ def plot_nogse_vs_x_fit_ptG(ax, nroi, modelo, x, x_fit, f, fit, tnogse, n, slic,
     ax.tick_params(direction='in', top=True, right=True, left=True, bottom=True)
     ax.tick_params(axis='x',rotation=0, labelsize=16, color='black')
     ax.tick_params(axis='y', labelsize=16, color='black')
-    title = ax.set_title(f"{modelo} | $T_\mathrm{{NOGSE}}$ = {tnogse} ms | $N$ = {n} | slice = {slic} ", fontsize=15)
+    title = ax.set_title(f"{nroi} | {modelo} | $T_\mathrm{{NOGSE}}$ = {tnogse} ms | $N$ = {n} | slice = {slic} ", fontsize=15)
+
 
 def plot_contrast_vs_g_data(ax, nroi, g_contrast, f, error, tnogse, n, slic, color):
-    #ax.errorbar(g_contrast, f, yerr=error, fmt='o', markersize=3, linewidth=2, label=nroi, capsize=5)
-    ax.plot(g_contrast, f, 'o-', markersize=7, linewidth=2, color=color, label=nroi)
+    ax.errorbar(g_contrast, f, yerr=error, fmt='o-', markersize=3, linewidth=2, label=nroi, capsize=5)
+    #ax.plot(g_contrast, f, 'o-', markersize=7, linewidth=2, color=color, label=nroi)
     ax.set_xlabel("Intensidad de gradiente $g$ [mT/m]", fontsize=27)
     ax.set_ylabel("Contraste $\mathrm{NOGSE}$ $\Delta M$", fontsize=27)
     ax.legend(title='ROI', title_fontsize=15, fontsize=15, loc='upper right')
@@ -751,7 +776,7 @@ def plot_contrast_rest_mixto_levs(ax, nroi, modelo, g_contrast, roi, T_nogse, n,
     title = ax.set_title("{} | Modelo: {} | $T_\mathrm{{NOGSE}}$ = {} ms  |  $N$ = {} ".format(nroi, modelo, T_nogse, int(n)), fontsize=18)
 
 def plot_lognorm_dist(ax, nroi, tnogse, n, l_c, l_c_mode, sigma, slic, color):
-    dist = lognormal(l_c, sigma, l_c_mode)
+    dist = lognormal_mode(l_c, sigma, l_c_mode)
     l_c_median = l_c_mode*np.exp((sigma**2))
     l_c_mid = l_c_mode*np.exp((sigma**2)/2)
     plt.axvline(x=l_c_mode, color=color, linestyle='-', label = "Moda") 
@@ -762,11 +787,11 @@ def plot_lognorm_dist(ax, nroi, tnogse, n, l_c, l_c_mode, sigma, slic, color):
     #ax.set_xlabel("Diámetro de célula $d$ [$\mu$m]", fontsize=27)
     ax.set_ylabel("P($l_c$)", fontsize=27)
     #ax.set_ylabel("P($d$)", fontsize=27)
-    ax.legend(title='$T_\mathrm{{NOGSE}}$ [ms]', title_fontsize=15, fontsize=15, loc='upper right')
+    ax.legend(title_fontsize=15, fontsize=15, loc='upper right')
     ax.tick_params(direction='in', top=True, right=True, left=True, bottom=True)
     ax.tick_params(axis='x',rotation=0, labelsize=16, color='black')
     ax.tick_params(axis='y', labelsize=16, color='black')
-    title = ax.set_title(f"$T_\mathrm{{NOGSE}}$ = {tnogse} ms | $N$ = {n} | slice = {slic} ", fontsize=15)
+    title = ax.set_title(f"{nroi} | $T_\mathrm{{NOGSE}}$ = {tnogse} ms | $N$ = {n} | slice = {slic} ", fontsize=15)
     ax.fill_between(l_c, dist, color=color, alpha=0.3)
     #ax.set_xlim(0.5, 10.75)
 
@@ -778,7 +803,7 @@ def plot_lognorm_dist_ptG(ax, nroi, tnogse, n, l_c, dist, slic, color, label):
     ax.tick_params(direction='in', top=True, right=True, left=True, bottom=True)
     ax.tick_params(axis='x',rotation=0, labelsize=16, color='black')
     ax.tick_params(axis='y', labelsize=16, color='black')
-    title = ax.set_title(f"$T_\mathrm{{NOGSE}}$ = {tnogse} ms | $N$ = {n} | slice = {slic} ", fontsize=15)
+    title = ax.set_title(f"{nroi} | $T_\mathrm{{NOGSE}}$ = {tnogse} ms | $N$ = {n} | slice = {slic} ", fontsize=15)
     ax.fill_between(l_c, dist, color=color, alpha=0.3)
     #ax.set_xlim(0.5, 10.75)
 
@@ -881,6 +906,21 @@ def M_nogse_free(TE, G, N, x, M0, D0):
 
     return M0*np.exp(-1.0/12 * g**2 * G**2 * D0 * ((N-1) * x**3 + y**3))
 
+def M_nogse_free_offset(TE, G, N, x, M0, D0, C):
+
+    g = 267.52218744 # ms**-1 mT**-1
+    #[D0] = m2/ms
+
+    x = np.array(x)
+    TE = np.array(TE)
+    N = np.array(N)
+    G = np.array(G)
+
+
+    y = TE - (N-1) * x
+
+    return M0*np.exp(-1.0/12 * g**2 * G**2 * D0 * ((N-1) * x**3 + y**3)) + C
+
 def M_nogse_rest(TE, G, N, x, t_c, M0, D0):
 
     g = 267.52218744 # ms**-1 mT**-1
@@ -916,29 +956,109 @@ def M_nogse_rest_offset(TE, G, N, x, t_c, M0, D0, C):
 def M_nogse_mixto(TE, G, N, x, t_c, alpha, M0, D0): #alpha es 1/alpha
     return M0 * M_nogse_free(TE, G, N, x, 1, alpha*D0) * M_nogse_rest(TE, G, N, x, t_c, 1, (1-alpha)*D0)
 
-def M_nogse_mixto_offset(TE, G, N, x, t_c, alpha, M0, D0, C, amp): #alpha es 1/alpha
-    return amp*(M0 * M_nogse_mixto(TE, G, N, x, t_c, alpha, 1, D0)+ C)
+def M_nogse_mixto_offset(TE, G, N, x, t_c, alpha, M0, D0, C): #alpha es 1/alpha
+    return M0 * M_nogse_mixto(TE, G, N, x, t_c, alpha, 1, D0) + C
 
-def M_nogse_mixto_tort(TE, G, N, x, t_c, alpha, M0, D0, C, amp): #alpha es 1/alpha
-    return amp*(M0 * M_nogse_mixto(TE, G, N, x, t_c, 0, 1, D0)+ C*M_nogse_free(TE, G, N, x, 1, D0*alpha))
+def M_nogse_rest_free_offset(TE, G, N, x, t_c, alpha, D0, A, B, C): #alpha es 1/alpha
+    return A * M_nogse_rest(TE, G, N, x, t_c, 1, D0) + B * M_nogse_free(TE, G, N, x, 1, alpha*D0) + C 
 
-def lognormal(l_c, sigma, l_c_mode):
-    #l_c_median = l_c_mid*np.exp(-(sigma**2)/2)
-    l_c_median = l_c_mode*np.exp(sigma**2)
-    return (1/(l_c*sigma*np.sqrt(2*np.pi))) * np.exp(-(np.log(l_c)- np.log(l_c_median))**2 / (2*sigma**2))
+def M_nogse_tort_rest_free(TE, G, N, x, t_c, alpha, D0, A, B, C): #alpha es 1/alpha
+    return A * M_nogse_rest(TE, G, N, x, t_c, 1, D0) + B * M_nogse_free(TE, G, N, x, 1, alpha*D0) + C * M_nogse_free(TE, G, N, x, 1, D0)
 
-def fit_lognormal(l_c, amp, sigma, l_c_mode):
-    #l_c_median = l_c_mid*np.exp(-(sigma**2)/2)
-    l_c_median = l_c_mode*np.exp(sigma**2)
-    return amp*(1/(l_c*sigma*np.sqrt(2*np.pi))) * np.exp(-(np.log(l_c)- np.log(l_c_median))**2 / (2*sigma**2))
+def M_nogse_mixto_free_offset(TE, G, N, x, t_c, alpha, D0, A, B, C): #alpha es 1/alpha
+    return A * M_nogse_mixto(TE, G, N, x, t_c, alpha, 1, D0) + B * M_nogse_free(TE, G, N, x, 1, D0) + C
+
+def M_nogse_mixto_riciannoise(TE, G, N, x, t_c, alpha, M0, D0, C): #alpha es 1/alpha
+    return np.sqrt( ( M_nogse_mixto(TE, G, N, x, t_c, alpha, M0, D0) )**2  + (C/M0)**2) + (C/M0)
+
+def M_nogse_mixtooffset_riciannoise(TE, G, N, x, t_c, alpha, M0, D0, C, B): #alpha es 1/alpha
+    return np.sqrt( ( M_nogse_mixto(TE, G, N, x, t_c, alpha, M0, D0) + B )**2  + (C/M0)**2) + (C/M0)
+
+def M_nogse_mixto_offsetort(TE, G, N, x, t_c, alpha, M0, D0, C): #alpha es 1/alpha
+    return M_nogse_mixto(TE, G, N, x, t_c, alpha, M0, D0) + C*M_nogse_free(TE, G, N, x, 1, D0*alpha)
+
+def lognormal_mode(l_c, sigma, l_c_mode):
+    #l_c_mid = l_c_median*np.exp((sigma**2)/2)
+    l_c_mid = l_c_mode*np.exp(sigma**2)
+    return (1/(l_c*sigma*np.sqrt(2*np.pi))) * np.exp(-(np.log(l_c)- np.log(l_c_mid))**2 / (2*sigma**2))
+
+def lognormal_median(l_c, sigma, l_c_median):
+    l_c_mid = l_c_median*np.exp((sigma**2)/2)
+    # l_c_mid = l_c_mode*np.exp(sigma**2)
+    return (1/(l_c*sigma*np.sqrt(2*np.pi))) * np.exp(-(np.log(l_c)- np.log(l_c_mid))**2 / (2*sigma**2))
+
+def M_mixtoint_medio(TE, G, N, x, t_c, alpha, D0):  # alpha es 1/alpha
+
+    # tc = np.linspace(0.5, 100, 1000)
+    # dM = fit_contrast_vs_g_rest(TE, G, N, tc, 1, D0)
+    # dM_final = dM[-1]
+    
+    # # Identificar el índice de estabilización
+    # idx_stabilize_array = np.where(np.abs(dM - dM_final)/dM_final >= 0.025)[0]
+    # if idx_stabilize_array.size > 0:
+    #     idx_stabilize = idx_stabilize_array[-1]
+    #     tc_interval = tc[:idx_stabilize + 1]
+    # else:
+    #     tc_interval = tc  # Usar todo el rango de tc si no se encuentra un punto de estabilización
+
+    #######################################################################################################
+
+    tc_interval = np.linspace(0.2, t_c, 1000)
+
+    #######################################################################################################
+
+    # Calcular la integral para cada valor en x
+    integrales = []
+    for xi in x:
+        M_rest = M_nogse_mixto(TE, G, N, xi, tc_interval, alpha, 1, D0)
+        dM_rest_medio = np.trapz(M_rest, tc_interval) / (tc_interval[-1])
+        integrales.append(dM_rest_medio)
+
+    return np.array(integrales)
+
+def M_nogse_mixtoint_free_offset_amp(TE, G, N, x, t_c, alpha, D0, A, B, C, amp): #alpha es 1/alpha
+    return amp*(A * M_mixtoint_medio(TE, G, N, x, t_c, alpha, D0) + B * M_nogse_free(TE, G, N, x, 1, D0) + C)
+
+def fit_contrast_vs_g_free(TE, G, N, alpha, M0, D0): #alpha es 1/alpha
+    return M_nogse_free(TE, G, N, TE/N, M0, alpha*D0) - M_nogse_free(TE, G, N, 0.5, M0, alpha*D0)
+
+def fit_contrast_vs_g_rest(TE, G, N, t_c, M0, D0):
+    return M_nogse_rest(TE, G, N, TE/N, t_c, M0, D0) - M_nogse_rest(TE, G, N, 0.5, t_c, M0, D0)
+
+def fit_contrast_vs_g_mixto(TE, G, N, tc, alpha, M0, D0):
+    return M_nogse_mixto(TE, G, N, TE/N, tc, alpha, M0, D0) - M_nogse_mixto(TE, G, N, 0.5, tc, alpha, M0, D0) 
+
+def fit_contrast_vs_g_ad(Lc, Ld, n, alpha, D0): #Estan invertidos Lc y Ld y alpha es 1/alpha
+    gamma = 267.52218744
+    return -np.exp(D0**3*((-0.08333333333333333*alpha*Lc**6)/D0**3 - ((1 - alpha)*Ld**4*(Lc**2/D0 + ((-3 - np.e**(-Lc**2/Ld**2) + 4/np.e**(Lc**2/(2.*Ld**2)))*Ld**2)/D0))/D0**2)) + np.exp(D0**3*((2*(-1)**n*(1 - alpha)*(-3.*(-1)**n - 1/(2.*np.e**(Lc**2/Ld**2)) - (0.5*(-1)**n)/np.e**(Lc**2/(Ld**2*n)) + (2.*(-1)**n)/np.e**(Lc**2/(2.*Ld**2*n)) + 2.*(-1)**n*np.e**(Lc**2/(2.*Ld**2*n)) - 0.5*(-1)**n*np.e**(Lc**2/(Ld**2*n)) + 2*np.e**((Lc**2*(3 - 2*n))/(2.*Ld**2*n)) - 1/(2.*np.e**((Lc**2*(-2 + n))/(Ld**2*n))) + 2*np.e**((D0*(Lc**2/D0 - (2*Lc**2*n)/D0))/(2.*Ld**2*n)) - 3*np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))*Ld**6)/(D0**3*(1 + np.e**(Lc**2/(Ld**2*n)))) - (0.08333333333333333*alpha*Lc**6)/(D0**3*n**2) - ((-1 + alpha)*Ld**4*(-((np.e**(Lc**2/(Ld**2*n))*Lc**2)/D0) + ((1 - 4*np.e**(Lc**2/(2.*Ld**2*n)) + 3*np.e**(Lc**2/(Ld**2*n)))*Ld**2*n)/D0))/(D0**2*np.e**(Lc**2/(Ld**2*n))*n) - ((1 - alpha)*Ld**6*(1 + (-1)**(1 + n)*np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)) - (4*(-(np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(-1 + n)))**n)/(1 + (np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(-1 + n)))**2 + (4*(np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(2.*(-1 + n))))/(1 + (np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(-1 + n))) + (4*(np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(2 - 2*n))*(-(np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(-1 + n)))**n)/(1 + (np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(-1 + n))) + (Lc**2*(-1 + n))/(Ld**2*n) - 2*n + (4*(np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(-1 + n))*(-2 + (np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(-1 + n))*(-1 + n) + n))/(1 + (np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(-1 + n)))**2))/D0**3))
+
 
 def fit_nogse_vs_x_mixtodistmode(TE, G, N, x, lc_mode, sigma, alpha, M0, D0):
 
-    n = 100
-    lmax = 40 #um 
+    n = 100 # Cambiar esto no altera demasiado el ajuste y aumentar n produce que el fitting sea mucho más lento
+    lmax = 60 #um 
 
-    lcs = np.linspace(0.6, lmax, n) #menos que 0.5 hace que diverja el ajuste
-    weights = lognormal(lcs, sigma, lc_mode)
+    lcs = np.linspace(0.6, lmax, n) # El mínimo es sensible a Tnogse y G. En general, menos que 0.5 hace que diverja el ajuste
+    weights = lognormal_mode(lcs, sigma, lc_mode)
+    weights = weights/np.sum(weights)
+
+    E = np.zeros(len(x))
+
+    for lc, w in zip(lcs, weights):
+        E = E + M_nogse_mixto(TE, G, N, x, (lc**2)/(2*D0*1e12), alpha, M0, D0)*w
+
+    return E
+
+def M_nogse_mixtodist_riciannoise(TE, G, N, x, lc_mode, sigma, alpha, M0, D0, C): #alpha es 1/alpha
+    return np.sqrt( ( fit_nogse_vs_x_mixtodistmode(TE, G, N, x, lc_mode, sigma, alpha, M0, D0) )**2  + (C/M0)**2) + (C/M0)
+
+def fit_nogse_vs_x_mixtodistmedian(TE, G, N, x, lc_median, sigma, alpha, M0, D0):
+
+    n = 1000 # Cambiar esto no altera demasiado el ajuste y aumentar n produce que el fitting sea mucho más lento
+    lmax = 100 #um 
+
+    lcs = np.linspace(1.0, lmax, n) # El mínimo es sensible a Tnogse y G. En general, menos que 0.5 hace que diverja el ajuste
+    weights = lognormal_median(lcs, sigma, lc_median)
     weights = weights/np.sum(weights)
 
     E = np.zeros(len(x))
@@ -951,10 +1071,10 @@ def fit_nogse_vs_x_mixtodistmode(TE, G, N, x, lc_mode, sigma, alpha, M0, D0):
 def fit_nogse_vs_x_mixtodistmode_offset(TE, G, N, x, lc_mode, sigma, alpha, M0, D0, C):
 
     n = 100
-    lmax = 40 #um 
+    lmax = 50 #um 
 
-    lcs = np.linspace(0.5, lmax, n) #menos que 0.5 hace que diverja el ajuste
-    weights = lognormal(lcs, sigma, lc_mode)
+    lcs = np.linspace(0.6, lmax, n) #menos que 0.5 hace que diverja el ajuste
+    weights = lognormal_mode(lcs, sigma, lc_mode)
     weights = weights/np.sum(weights)
 
     E = np.zeros(len(x))
@@ -964,16 +1084,35 @@ def fit_nogse_vs_x_mixtodistmode_offset(TE, G, N, x, lc_mode, sigma, alpha, M0, 
 
     return E + C
 
+def fit_nogse_vs_x_mixtodistmode_riciannoise(TE, G, N, x, lc_mode, sigma, alpha, M0, D0, C):
+
+    n = 1000
+    lmax = 40 #um 
+
+    lcs = np.linspace(0.3, lmax, n) #menos que 0.5 hace que diverja el ajuste
+    weights = lognormal_mode(lcs, sigma, lc_mode)
+    weights = weights/np.sum(weights)
+
+    E = np.zeros(len(x))
+    #Necesito un array de longitud x con el valor de C
+    Carr = np.zeros(len(x))
+    Carr = Carr + C
+
+    for lc, w in zip(lcs, weights):
+        E = E + M_nogse_mixto(TE, G, N, x, (lc**2)/(2*D0*1e12), alpha, M0, D0)*w
+
+    return np.sqrt(E**2 + Carr**2)
+
 def fit_nogse_vs_x_restdistmode(TE, G, N, x, lc_mode, sigma, M0, D0):
 
     if sigma<0:
-        return 1e20
+         return 1e20
 
     n = 100
-    lmax = 40 #um esto es hasta un tau_c de 135ms
+    lmax = 40 #um 
 
     l_cs = np.linspace(0.5, lmax, n) #menos que 0.5 hace que diverja el ajuste
-    weights = lognormal(l_cs, sigma, lc_mode)
+    weights = lognormal_mode(l_cs, sigma, lc_mode)
     weights = weights/np.sum(weights)
 
     E = np.zeros(len(x))
@@ -984,6 +1123,9 @@ def fit_nogse_vs_x_restdistmode(TE, G, N, x, lc_mode, sigma, M0, D0):
     return E
 
 def fit_nogse_vs_x_restdistmode_restdistmode(TE, G, N, x, lc_mode_1, sigma_1, lc_mode_2, sigma_2, M0_1, M0_2, D0_1, D0_2):
+    #sigma = 0.06416131084794455
+    #l_cmid = 7.3*10**-6
+
     if sigma_1<0 or sigma_2<0:
         return 1e20
 
@@ -991,10 +1133,10 @@ def fit_nogse_vs_x_restdistmode_restdistmode(TE, G, N, x, lc_mode_1, sigma_1, lc
     lmax = 100 #um esto es hasta un tau_c de 135ms
 
     l_cs = np.linspace(0.5, lmax, n) #menos que 0.5 hace que diverja el ajuste
-    weights_1 = lognormal(l_cs, sigma_1, lc_mode_1)
+    weights_1 = lognormal_mode(l_cs, sigma_1, lc_mode_1)
     weights_1 = weights_1/np.sum(weights_1)
 
-    weights_2 = lognormal(l_cs, sigma_2, lc_mode_2)
+    weights_2 = lognormal_mode(l_cs, sigma_2, lc_mode_2)
     weights_2 = weights_2/np.sum(weights_2)
 
     E = np.zeros(len(x))
@@ -1003,39 +1145,6 @@ def fit_nogse_vs_x_restdistmode_restdistmode(TE, G, N, x, lc_mode_1, sigma_1, lc
         E = E + M_nogse_rest(TE, G, N, x, (l_c**2)/(2*D0_1*1e12), M0_1, D0_1)*w1 + M_nogse_rest(TE, G, N, x, (l_c**2)/(2*D0_2*1e12), M0_2, D0_2)*w2
 
     return E
-
-def M_nogse_rest_free_offset(TE, G, N, x, t_c, alpha, D0, A, B, C): #alpha es 1/alpha
-    return A * M_nogse_rest(TE, G, N, x, t_c, 1, D0) + B * M_nogse_free(TE, G, N, x, 1, alpha*D0) + C 
-
-def M_nogse_rest_free_offset_amp(TE, G, N, x, t_c, alpha, D0, A, B, C, amp): #alpha es 1/alpha
-    return amp*(A * M_nogse_rest(TE, G, N, x, t_c, 1, D0) + B * M_nogse_free(TE, G, N, x, 1, alpha*D0) + C)
-
-def M_restint_medio(TE, G, N, x, D0):  # alpha es 1/alpha
-    
-    tc = np.linspace(0.5, 40, 1000)
-    dM = fit_contrast_vs_g_rest(TE, G, N, tc, 1, D0)
-    dM_final = dM[-1]
-    
-    # Identificar el índice de estabilización
-    idx_stabilize_array = np.where(dM <= dM_final * 0.99)[0]
-    if idx_stabilize_array.size > 0:
-        idx_stabilize = idx_stabilize_array[-1]
-        tc_interval = tc[:idx_stabilize + 1]
-    else:
-        tc_interval = tc  # Usar todo el rango de tc si no se encuentra un punto de estabilización
-
-    # Calcular la integral para cada valor en x
-    integrales = []
-    for xi in x:
-        M_rest = M_nogse_rest(TE, G, N, xi, tc_interval, 1, D0)
-        dM_rest_medio = np.trapz(M_rest, tc_interval) / tc_interval[-1]
-        integrales.append(dM_rest_medio)
-
-    return np.array(integrales)
-
-def M_nogse_restint_free_offset_amp(TE, G, N, x, t_c, alpha, D0, A, B, C, amp): #alpha es 1/alpha
-    return amp*(A * M_restint_medio(TE, G, N, x, D0) + B * M_nogse_free(TE, G, N, x, 1, alpha*D0) + C)
-
 
 def fit_nogse_vs_x_free_rest(TE, G, N, x, alpha_1, M0_1, D0_1, tc_2, M0_2, D0_2): #alpha es 1/alpha
     return M_nogse_free(TE, G, N, x, M0_1, alpha_1*D0_1) + M_nogse_rest(TE, G, N, x, tc_2, M0_2, D0_2)
@@ -1058,27 +1167,19 @@ def fit_nogse_vs_x_mixto_mixtodist(TE, G, N, x, tc_1, alpha_1, M0_1, D0_1, lc_mo
 def fit_nogse_vs_x_mixtodist_mixtodist(TE, G, N, x, lc_mode_1, sigma_1, alpha_1, M0_1, D0_1, lc_mode_2, sigma_2, alpha_2, M0_2, D0_2): #alpha es 1/alpha
     return fit_nogse_vs_x_mixtodistmode(TE, G, N, x, lc_mode_1, sigma_1, alpha_1, M0_1, D0_1) + fit_nogse_vs_x_mixtodistmode(TE, G, N, x, lc_mode_2, sigma_2, alpha_2, M0_2, D0_2)
 
-def fit_nogse_vs_x_mixtodist_mixtodist_offset(TE, G, N, x, lc_mode_1, sigma_1, alpha_1, M0_1, D0_1, lc_mode_2, sigma_2, alpha_2, M0_2, D0_2, C): #alpha es 1/alpha
-    return fit_nogse_vs_x_mixtodistmode(TE, G, N, x, lc_mode_1, sigma_1, alpha_1, M0_1, D0_1) + fit_nogse_vs_x_mixtodistmode(TE, G, N, x, lc_mode_2, sigma_2, alpha_2, M0_2, D0_2) + C
-
 def fit_nogse_vs_x_free_mixtodist(TE, G, N, x, alpha_1, M0_1, D0_1, lc_mode_2, sigma_2, alpha_2, M0_2, D0_2): #alpha es 1/alpha
     return M_nogse_free(TE, G, N, x, M0_1, alpha_1*D0_1) + fit_nogse_vs_x_mixtodistmode(TE, G, N, x, lc_mode_2, sigma_2, alpha_2, M0_2, D0_2)
 
 def fit_nogse_vs_x_free_mixtodist_offset(TE, G, N, x, alpha_1, M0_1, D0_1, lc_mode_2, sigma_2, alpha_2, M0_2, D0_2, C): #alpha es 1/alpha
     return M_nogse_free(TE, G, N, x, M0_1, alpha_1*D0_1) + fit_nogse_vs_x_mixtodistmode(TE, G, N, x, lc_mode_2, sigma_2, alpha_2, M0_2, D0_2) + C
 
-def fit_contrast_vs_g_free(TE, G, N, alpha, M0, D0): #alpha es 1/alpha
-    return M_nogse_free(TE, G, N, TE/N, M0, alpha*D0) - M_nogse_free(TE, G, N, 0.5, M0, alpha*D0)
-
-def fit_contrast_vs_g_rest(TE, G, N, t_c, M0, D0):
-    return M_nogse_rest(TE, G, N, TE/N, t_c, M0, D0) - M_nogse_rest(TE, G, N, 0.5, t_c, M0, D0)
 
 def fit_contrast_vs_g_restdistmode(TE, G, N, l_c_mode, sigma, M0, D0):
     n = 100
     lmax = 10
 
     l_cs = np.linspace(0.5, lmax, n) #menos que 0.5 hace que diverja el ajuste
-    weights = lognormal(l_cs, sigma, l_c_mode)
+    weights = lognormal_mode(l_cs, sigma, l_c_mode)
     weights = weights/np.sum(weights)
 
     E = np.zeros(len(G))
@@ -1087,9 +1188,6 @@ def fit_contrast_vs_g_restdistmode(TE, G, N, l_c_mode, sigma, M0, D0):
         E = E + fit_contrast_vs_g_rest(TE, G, N, (l_c**2)/(2*D0*1e12) , M0, D0)*w
 
     return E
-
-def fit_contrast_vs_g_mixto(TE, G, N, t_c, alpha, M0, D0):
-    return M_nogse_mixto(TE, G, N, TE/N, t_c, alpha, M0, D0) - M_nogse_mixto(TE, G, N, 0.5, t_c, alpha, M0, D0) 
 
 def fit_contrast_vs_g_mixto_mixto(TE, G, N, tc_1, alpha_1, M0_1, D0_1, tc_2, alpha_2, M0_2, D0_2):
     return fit_contrast_vs_g_mixto(TE, G, N, tc_1, alpha_1, M0_1, D0_1) + fit_contrast_vs_g_mixto(TE, G, N, tc_2, alpha_2, M0_2, D0_2) 
@@ -1102,11 +1200,11 @@ def fit_contrast_vs_g_mixtodist(TE, G, N, lc_mode, sigma, alpha, M0, D0):
     if sigma<0:
         return 1e20
     
-    n = 100
-    lmax = 40
+    n = 1000
+    lmax = 120
 
-    l_cs = np.linspace(0.6, lmax, n) #menos que 0.5 hace que diverja el ajuste
-    weights = lognormal(l_cs, sigma, lc_mode)
+    l_cs = np.linspace(0.5, lmax, n) #menos que 0.5 hace que diverja el ajuste
+    weights = lognormal_mode(l_cs, sigma, lc_mode)
     weights = weights/np.sum(weights)
 
     E = np.zeros(len(G))
@@ -1131,10 +1229,6 @@ def fit_contrast_vs_g_mixto_mixto_free(TE, G, N, tc_1, alpha_1, M0_1, D0_1, tc_2
 def fit_contrast_vs_g_mixto_mixto_mixto(TE, G, N, tc_1, alpha_1, M0_1, D0_1, tc_2, alpha_2, M0_2, D0_2, tc_3, alpha_3, M0_3, D0_3):
     return fit_contrast_vs_g_mixto(TE, G, N, tc_1, alpha_1, M0_1, D0_1) + fit_contrast_vs_g_mixto(TE, G, N, tc_2, alpha_2, M0_2, D0_2) + fit_contrast_vs_g_mixto(TE, G, N, tc_3, alpha_3, M0_3, D0_3)
 
-def fit_contrast_vs_g_ad(Lc, Ld, n, alpha, D0): #Estan invertidos Lc y Ld y alpha es 1/alpha
-    gamma = 267.52218744
-    return -np.exp(D0**3*((-0.08333333333333333*alpha*Lc**6)/D0**3 - ((1 - alpha)*Ld**4*(Lc**2/D0 + ((-3 - np.e**(-Lc**2/Ld**2) + 4/np.e**(Lc**2/(2.*Ld**2)))*Ld**2)/D0))/D0**2)) + np.exp(D0**3*((2*(-1)**n*(1 - alpha)*(-3.*(-1)**n - 1/(2.*np.e**(Lc**2/Ld**2)) - (0.5*(-1)**n)/np.e**(Lc**2/(Ld**2*n)) + (2.*(-1)**n)/np.e**(Lc**2/(2.*Ld**2*n)) + 2.*(-1)**n*np.e**(Lc**2/(2.*Ld**2*n)) - 0.5*(-1)**n*np.e**(Lc**2/(Ld**2*n)) + 2*np.e**((Lc**2*(3 - 2*n))/(2.*Ld**2*n)) - 1/(2.*np.e**((Lc**2*(-2 + n))/(Ld**2*n))) + 2*np.e**((D0*(Lc**2/D0 - (2*Lc**2*n)/D0))/(2.*Ld**2*n)) - 3*np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))*Ld**6)/(D0**3*(1 + np.e**(Lc**2/(Ld**2*n)))) - (0.08333333333333333*alpha*Lc**6)/(D0**3*n**2) - ((-1 + alpha)*Ld**4*(-((np.e**(Lc**2/(Ld**2*n))*Lc**2)/D0) + ((1 - 4*np.e**(Lc**2/(2.*Ld**2*n)) + 3*np.e**(Lc**2/(Ld**2*n)))*Ld**2*n)/D0))/(D0**2*np.e**(Lc**2/(Ld**2*n))*n) - ((1 - alpha)*Ld**6*(1 + (-1)**(1 + n)*np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)) - (4*(-(np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(-1 + n)))**n)/(1 + (np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(-1 + n)))**2 + (4*(np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(2.*(-1 + n))))/(1 + (np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(-1 + n))) + (4*(np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(2 - 2*n))*(-(np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(-1 + n)))**n)/(1 + (np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(-1 + n))) + (Lc**2*(-1 + n))/(Ld**2*n) - 2*n + (4*(np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(-1 + n))*(-2 + (np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(-1 + n))*(-1 + n) + n))/(1 + (np.e**((D0*(Lc**2/D0 - (Lc**2*n)/D0))/(Ld**2*n)))**(1/(-1 + n)))**2))/D0**3))
-
 ######################################################################## BORRAR ######################################################################
 
 def delta_M_intra_extra(TE, G, N, t_c_int, t_c_ext, alpha, M0_int, D0_int, D0_ext):
@@ -1145,7 +1239,7 @@ def delta_M_rest_dist(t_c_mid, sigma, TE, G, N, M0, D0):
     lmax = 120
 
     t_cs = np.linspace(0.5, lmax, n)
-    weights = lognormal(t_cs, sigma, t_c_mid)
+    weights = lognormal_mode(t_cs, sigma, t_c_mid)
     weights = weights/np.sum(weights)
 
     out = np.zeros(len(G))
@@ -1163,7 +1257,7 @@ def delta_M_mixto_bimodal(t_c_mid_1, t_c_mid_2, sigma_1, sigma_2, p, TE, G, N, a
     lmax = 120
 
     t_cs = np.linspace(0.5, lmax, n)
-    weights = p*lognormal(t_cs, sigma_1, t_c_mid_1) + (1-p)*lognormal(t_cs, sigma_2, t_c_mid_2)
+    weights = p*lognormal_mode(t_cs, sigma_1, t_c_mid_1) + (1-p)*lognormal_mode(t_cs, sigma_2, t_c_mid_2)
     weights = weights/np.sum(weights)
 
     out = np.zeros(len(G))
